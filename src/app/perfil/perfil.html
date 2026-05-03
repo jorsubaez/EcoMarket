@@ -1,0 +1,135 @@
+<main class="central-container">
+  <aside class="sidebar-panel">
+    <div class="sidebar-scroll-container">
+      @for (item of sidebarItems; track item) {
+        <button
+          class="sidebar-button"
+          type="button"
+          [class.sidebar-button-active]="item === 'Mi perfil'"
+          (click)="handleSidebarAction(item)"
+        >
+          {{ item }}
+        </button>
+      }
+    </div>
+  </aside>
+
+  <section class="main-content">
+    @if (successMessage) {
+      <p class="feedback success">{{ successMessage }}</p>
+    }
+
+    @if (errorMessage) {
+      <p class="feedback error">{{ errorMessage }}</p>
+    }
+
+    @if (accessDenied) {
+      <div class="state-card">
+        <div class="profile-pic profile-pic-placeholder">
+          <span>?</span>
+        </div>
+        <h3>Sesion no disponible</h3>
+        <p>Este componente queda listo, pero la redireccion y el guard los integrara Persona 3.</p>
+      </div>
+    } @else if (loading) {
+      <div class="state-card">
+        <div class="profile-pic profile-pic-placeholder">
+          <span>{{ avatarInitials }}</span>
+        </div>
+        <h3>Cargando perfil...</h3>
+        <p>Estamos recuperando los datos del usuario desde la API local.</p>
+      </div>
+    } @else {
+      <div class="profile-pic profile-pic-placeholder">
+        <span>{{ avatarInitials }}</span>
+      </div>
+
+      <h3>{{ user.nombre }}</h3>
+      <h4>{{ roleLabel }}</h4>
+
+      <div class="profile-cards">
+        <article class="info-card">
+          <p class="info-label">Email</p>
+          <p class="info-value">{{ user.email }}</p>
+        </article>
+
+        <article class="info-card">
+          <p class="info-label">Telefono</p>
+          <p class="info-value">{{ displayPhone }}</p>
+        </article>
+
+        <article class="info-card">
+          <p class="info-label">Direccion principal</p>
+          <p class="info-value">{{ displayAddress }}</p>
+        </article>
+      </div>
+
+      <div class="description-text">
+        <p>
+          Este espacio resume tus datos de cuenta y te permite actualizarlos sin depender
+          todavia de la navegacion global del proyecto.
+        </p>
+
+        @if (!editing) {
+          <div class="profile-actions">
+            <button class="btn btn-primary" type="button" (click)="beginEdit()">
+              Editar perfil
+            </button>
+            <button class="btn btn-secondary" type="button" (click)="handleSidebarAction('Mis pedidos')">
+              Ver pedidos
+            </button>
+          </div>
+        }
+      </div>
+
+      @if (editing) {
+        <section class="edit-card">
+          <div class="edit-head">
+            <div>
+              <h5>Editar perfil</h5>
+              <p>Actualiza tus datos personales y guardalos en la API local.</p>
+            </div>
+          </div>
+
+          <form class="profile-form" [formGroup]="profileForm" (ngSubmit)="saveProfile()">
+            <label class="field">
+              <span>Nombre</span>
+              <input type="text" formControlName="nombre" placeholder="Nombre y apellidos" />
+              @if (profileForm.controls.nombre.invalid && profileForm.controls.nombre.touched) {
+                <small>El nombre es obligatorio.</small>
+              }
+            </label>
+
+            <label class="field">
+              <span>Email</span>
+              <input type="email" formControlName="email" placeholder="correo@ejemplo.com" />
+              @if (profileForm.controls.email.invalid && profileForm.controls.email.touched) {
+                <small>Introduce un email valido.</small>
+              }
+            </label>
+
+            <label class="field">
+              <span>Telefono</span>
+              <input type="text" formControlName="telefono" placeholder="+34 600000000" />
+            </label>
+
+            <label class="field">
+              <span>Direccion</span>
+              <input type="text" formControlName="direccion" placeholder="Calle, numero, puerta" />
+            </label>
+
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" [disabled]="saving">
+                {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+              </button>
+              <button class="btn btn-secondary" type="button" (click)="cancelEdit()">
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </section>
+      }
+    }
+  </section>
+</main>
+
