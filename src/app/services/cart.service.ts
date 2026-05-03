@@ -1,12 +1,11 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject, firstValueFrom } from 'rxjs';
-import { HttpClient } from '@angular/common/http';
-import { Router } from '@angular/router';
-import { Producto } from '../catalogo/catalogo';
+import { Injectable, inject } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
+import { Firestore, collection, getDocs, doc, setDoc, deleteDoc } from '@angular/fire/firestore';
 import { AuthService } from './auth.service';
+import { Producto } from '../catalogo/catalogo';
 
 export interface CartItem {
-  id?: number;
+  id?: string;
   producto: Producto;
   cantidad: number;
 }
@@ -15,120 +14,75 @@ export interface CartItem {
   providedIn: 'root',
 })
 export class CartService {
+  private firestore = inject(Firestore);
+  private authService = inject(AuthService);
+
   private cartItems: CartItem[] = [];
   private cartSubject = new BehaviorSubject<CartItem[]>([]);
-  private apiUrl = 'http://localhost:8000/api/cart/';
-
   public cart$ = this.cartSubject.asObservable();
 
-  constructor(
-    private http: HttpClient,
-    private authService: AuthService,
-    private router: Router,
-  ) {
+  constructor() {
     this.authService.session$.subscribe((session) => {
-      if (session) {
-        this.loadCart();
+      if (session?.id) {
+        this.loadCart(session.id);
       } else {
         this.clearCartLocal();
       }
     });
   }
 
-  async loadCart() {
-    try {
-      const items: any[] = await firstValueFrom(this.http.get<any[]>(this.apiUrl));
-
-      console.log('CARRITO BACKEND:', items);
-
-      this.cartItems = items.map((item) => {
-        const producto =
-          item.producto_detalles || item.product_details || item.producto || item.product;
-
-        return {
-          id: item.id,
-          producto: {
-            ...producto,
-            nombre: producto?.nombre || producto?.name || producto?.titulo || '',
-            precio: Number(producto?.precio || producto?.price || 0),
-          },
-          cantidad: Number(item.cantidad || item.quantity || 1),
-        };
-      });
-
-      this.cartSubject.next([...this.cartItems]);
-    } catch (err) {
-      console.error('Error loading cart', err);
-    }
+  async loadCart(userId: string) {
+    const cartRef = collection(this.firestore, `users/${userId}/cart`);
+    const snapshot = await getDocs(cartRef);
+    this.cartItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CartItem));
+    this.cartSubject.next([...this.cartItems]);
   }
 
   async addToCart(producto: Producto, cantidad: number) {
-    if (!this.authService.currentUser) {
-      this.router.navigate(['/login']);
+    const user = this.authService.currentUser;
+    if (!user) return;
+
+    const existingItem = this.cartItems.find(item => item.producto.id === producto.id);
+    const cartRef = collection(this.firestore, `users/${user.id}/cart`);
+
+    if (existingItem) {
+      existingItem.cantidad += cantidad;
+      await setDoc(doc(cartRef, existingItem.id), { cantidad: existingItem.cantidad }, { merge: true });
+    } else {
+      const newItemRef = doc(cartRef);
+      const newItem: CartItem = { id: newItemRef.id, producto, cantidad };
+      await setDoc(newItemRef, newItem);
+      this.cartItems.push(newItem);
+    }
+    this.cartSubject.next([...this.cartItems]);
+  }
+
+  async removeFromCart(productoId: string | number) {
+    const user = this.authService.currentUser;
+    const item = this.cartItems.find(i => i.producto.id === productoId);
+    if (user && item?.id) {
+      await deleteDoc(doc(this.firestore, `users/${user.id}/cart/${item.id}`));
+      this.cartItems = this.cartItems.filter(i => i.id !== item.id);
+      this.cartSubject.next([...this.cartItems]);
+    }
+  }
+
+  async updateQuantity(productoId: string | number, cantidad: number) {
+    if (cantidad <= 0) {
+      await this.removeFromCart(productoId);
       return;
     }
-
-    const existingItem = this.cartItems.find((item) => item.producto.id === producto.id);
-
-    try {
-      if (existingItem) {
-        const newCantidad = existingItem.cantidad + cantidad;
-        await firstValueFrom(
-          this.http.patch(`${this.apiUrl}${existingItem.id}/`, { cantidad: newCantidad }),
-        );
-        existingItem.cantidad = newCantidad;
-      } else {
-        const newItem = await firstValueFrom(
-          this.http.post<any>(this.apiUrl, { producto: producto.id, cantidad }),
-        );
-        this.cartItems.push({
-          id: newItem.id,
-          producto: producto,
-          cantidad: newItem.cantidad,
-        });
-      }
+    const user = this.authService.currentUser;
+    const item = this.cartItems.find(i => i.producto.id === productoId);
+    if (user && item?.id) {
+      item.cantidad = cantidad;
+      await setDoc(doc(this.firestore, `users/${user.id}/cart/${item.id}`), { cantidad }, { merge: true });
       this.cartSubject.next([...this.cartItems]);
-    } catch (err) {
-      console.error('Error adding to cart', err);
-    }
-  }
-
-  async removeFromCart(productoId: number) {
-    const item = this.cartItems.find((item) => item.producto.id === productoId);
-    if (item && item.id) {
-      try {
-        await firstValueFrom(this.http.delete(`${this.apiUrl}${item.id}/`));
-        this.cartItems = this.cartItems.filter((i) => i.producto.id !== productoId);
-        this.cartSubject.next([...this.cartItems]);
-      } catch (err) {
-        console.error('Error removing from cart', err);
-      }
-    }
-  }
-
-  async updateQuantity(productoId: number, cantidad: number) {
-    const item = this.cartItems.find((item) => item.producto.id === productoId);
-    if (item) {
-      if (cantidad <= 0) {
-        await this.removeFromCart(productoId);
-      } else {
-        try {
-          await firstValueFrom(this.http.patch(`${this.apiUrl}${item.id}/`, { cantidad }));
-          item.cantidad = cantidad;
-          this.cartSubject.next([...this.cartItems]);
-        } catch (err) {
-          console.error('Error updating quantity', err);
-        }
-      }
     }
   }
 
   getCartTotal(): number {
-    return this.cartItems.reduce((total, item) => {
-      const precio = Number(item.producto?.precio || 0);
-      const cantidad = Number(item.cantidad || 0);
-      return total + precio * cantidad;
-    }, 0);
+    return this.cartItems.reduce((total, item) => total + (Number(item.producto.precio) * item.cantidad), 0);
   }
 
   getCartCount(): number {

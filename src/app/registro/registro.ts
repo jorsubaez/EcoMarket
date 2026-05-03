@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, ChangeDetectorRef } from '@angular/core'; // <-- Importa ChangeDetectorRef
 import { CommonModule } from '@angular/common';
 import { RouterLink, Router } from '@angular/router';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
@@ -21,6 +21,9 @@ export class RegistroComponent {
   readonly provincias = PROVINCIAS_ESPANA;
 
   private fb = inject(FormBuilder);
+  private authService = inject(AuthService);
+  private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef); // <-- Inyectamos el CDR
 
   registerForm = this.fb.group({
     first_name: ['', Validators.required],
@@ -31,8 +34,6 @@ export class RegistroComponent {
     provincia: ['', Validators.required],
     terms: [false, Validators.requiredTrue]
   });
-
-  constructor(private authService: AuthService, private router: Router) {}
 
   togglePassword(): void {
     this.passwordVisible = !this.passwordVisible;
@@ -72,20 +73,17 @@ export class RegistroComponent {
 
     this.authService.register(userData).subscribe({
       next: () => {
-        // Automatically login after register
-        this.authService.login({ email: userData.email, password: userData.password }).subscribe({
-          next: () => {
-            this.router.navigate(['/catalogo']);
-          },
-          error: () => {
-            this.router.navigate(['/login']);
-          }
-        });
+        // Firebase ya te ha iniciado sesión automáticamente. Solo redirigimos.
+        this.submitting = false;
+        this.cdr.detectChanges(); // <-- Avisamos a Angular de que ya terminamos
+        this.router.navigate(['/catalogo']);
       },
       error: (err) => {
         this.submitting = false;
-        this.errorMessage = 'Hubo un error al registrar tu cuenta. Puede que el email ya esté en uso.';
-        console.error(err);
+        // Mostramos el mensaje exacto para saber qué falló
+        this.errorMessage = 'Error: ' + (err.message || 'Hubo un error al registrar tu cuenta.');
+        this.cdr.detectChanges(); // <-- Avisamos a Angular del error
+        console.error('Fallo en el registro:', err);
       }
     });
   }

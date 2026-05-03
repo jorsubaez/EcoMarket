@@ -56,7 +56,7 @@ export class PanelProductor implements OnInit, OnDestroy {
   protected selectedFileName = 'Ningún archivo seleccionado';
   protected selectedCertName = 'Ningún archivo seleccionado';
 
-  protected editingProductId: number | string | null = null;
+  protected editingProductId: string | null = null;
   protected products: Product[] = [];
 
   protected readonly productForm = this.fb.nonNullable.group({
@@ -72,7 +72,7 @@ export class PanelProductor implements OnInit, OnDestroy {
   private selectedImageFile: File | null = null;
   /** Raw cert File ready to upload, or null if none selected. */
   private selectedCertFile: File | null = null;
-  private ownerId: number | string | null = null;
+  private ownerId: string | null = null;
 
   async ngOnInit(): Promise<void> {
     const session = this.authService.currentUser;
@@ -95,11 +95,11 @@ export class PanelProductor implements OnInit, OnDestroy {
           ownerName: p.ownerName,
           name: p.name,
           origin: p.origin,
-          price: typeof p.price === 'string' ? parseFloat(p.price) : p.price,
+          price: p.price,
           unit: p.unit,
           description: p.description,
           quantity: p.quantity,
-          image: p.image_url || p.image_url_legacy || '',
+          image: p.image_url || '',
           certificate_url: p.certificate_url,
           verification_status: p.verification_status || 'PENDIENTE',
         }));
@@ -407,8 +407,8 @@ export class PanelProductor implements OnInit, OnDestroy {
 }
 
 interface Product {
-  id?: number | string;
-  ownerId: number | string;
+  id?: string;
+  ownerId: string;
   ownerName?: string;
   name: string;
   origin: string;

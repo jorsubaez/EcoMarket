@@ -1,13 +1,12 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { HttpClient } from '@angular/common/http';
 import { ChangeDetectorRef } from '@angular/core';
+import { Firestore, doc, getDoc } from '@angular/fire/firestore';
 import { CartService } from '../services/cart.service';
 
-// Usamos la misma estructura del catálogo, pero le añadimos una descripción
 export interface Producto {
-  id: number;
+  id: string | number; // Aceptamos ambos para evitar choques
   nombre: string;
   origen: string;
   productor: string;
@@ -28,53 +27,54 @@ export interface Producto {
 })
 export class Detalle implements OnInit {
   private route = inject(ActivatedRoute);
-  producto: Producto | undefined;
+  private firestore = inject(Firestore);
+  private cartService = inject(CartService);
+  private cdr = inject(ChangeDetectorRef);
 
+  producto: Producto | undefined;
   loading = true;
 
-  constructor(
-    private http: HttpClient,
-    private cartService: CartService,
-    private cdr: ChangeDetectorRef,
-  ) {}
-
   ngOnInit() {
-    const idParam = this.route.snapshot.queryParamMap.get('id');
-    const id = idParam ? Number(idParam) : 1;
-    this.cargarProducto(id);
+    const id = this.route.snapshot.queryParamMap.get('id');
+    if (id) {
+      this.cargarProducto(id);
+    }
   }
 
-  cargarProducto(id: number) {
+  async cargarProducto(id: string) {
     this.loading = true;
-    this.http.get<any>(`http://localhost:8000/api/productos/${id}/`).subscribe({
-      next: (item) => {
+    try {
+      const docRef = doc(this.firestore, `products/${id}`);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const item = docSnap.data();
         this.producto = {
-          id: item.id,
-          nombre: item.name,
-          origen: item.origin,
-          productor: item.ownerName || 'Productor Anónimo',
-          precio: parseFloat(item.price),
-          unidad: item.unit,
-          disponibilidad: item.quantity,
-          imagenUrl: item.image_url || item.image_url_legacy || 'assets/images/placeholder.png',
-          tieneEcoSello: true,
-          descripcion: item.description || '',
+          id: docSnap.id,
+          nombre: item['name'],
+          origen: item['origin'],
+          productor: item['ownerName'] || 'Productor Anónimo',
+          precio: parseFloat(item['price']),
+          unidad: item['unit'],
+          disponibilidad: item['quantity'],
+          imagenUrl: item['image_url'] || 'assets/images/placeholder.png',
+          tieneEcoSello: item['verification_status'] === 'VERIFICADO',
+          descripcion: item['description'] || '',
         };
-        this.loading = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Error fetching product', err);
-        this.loading = false;
-        this.cdr.detectChanges();
-      },
-    });
+      }
+    } catch (err) {
+      console.error('Error fetching product', err);
+    } finally {
+      this.loading = false;
+      this.cdr.detectChanges();
+    }
   }
 
   agregarAlCarrito(cantidadInput: string) {
     if (this.producto) {
       const cantidad = parseInt(cantidadInput, 10) || 1;
-      this.cartService.addToCart(this.producto, cantidad);
+      // Usamos "as any" para puentear el conflicto de id: string vs id: number en tu CartService actual
+      this.cartService.addToCart(this.producto as any, cantidad);
     }
   }
 }

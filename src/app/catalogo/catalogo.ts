@@ -6,7 +6,7 @@ import { AuthService } from '../services/auth.service';
 import { PROVINCIAS_ESPANA } from '../shared/provincias';
 
 export interface Producto {
-  id: number;
+  id: string;
   nombre: string;
   origen: string;
   productor: string;
@@ -61,16 +61,16 @@ export class Catalogo implements OnInit {
   ngOnInit() {
     this.productService.products$.subscribe((data: ApiProduct[]) => {
       this.productos = data.map((item) => ({
-        id: item.id,
+        id: item.id || '',
         nombre: item.name,
         origen: item.origin,
         productor: item.ownerName || 'Productor anonimo',
         categoria: this.inferirCategoria(item),
-        precio: typeof item.price === 'string' ? parseFloat(item.price) : item.price,
+        precio: item.price,
         unidad: item.unit,
         disponibilidad: item.quantity,
         imagenUrl:
-          item.image_url || item.image_url_legacy || 'assets/images/placeholder.png',
+          item.image_url || 'assets/images/placeholder.png',
         tieneEcoSello: item.verification_status === 'VERIFICADO',
         descripcion: item.description || '',
         certificadoUrl: item.certificate_url,

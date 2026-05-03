@@ -32,15 +32,12 @@ export class LoginComponent {
 
   onSubmit() {
     this.submitted = true;
+
+    // Eliminamos los espacios en blanco accidentales al principio y al final del email
     this.email = this.email.trim();
 
     if (!this.email || !this.password) {
       this.errorMessage = 'Por favor, rellena todos los campos.';
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email)) {
-      this.errorMessage = 'Introduce un email valido.';
       return;
     }
 
@@ -49,21 +46,28 @@ export class LoginComponent {
 
     this.authService.login({ email: this.email, password: this.password }).pipe(
       finalize(() => {
-        // Garantiza reset del estado siempre, e informa a Angular del cambio.
         this.submitting = false;
         this.cdr.detectChanges();
       })
     ).subscribe({
-      next: (response) => {
-        if (response.user && response.user.rol === 'PRODUCTOR') {
+      next: (profile) => {
+        if (profile.rol?.toUpperCase() === 'PRODUCTOR') {
           this.router.navigate(['/panel-productor']);
         } else {
           this.router.navigate(['/perfil']);
         }
       },
       error: (err) => {
-        this.errorMessage = 'Email o contraseña incorrectos.';
-        console.error('Error al iniciar sesión:', err);
+        // AHORA SÍ: Filtramos el error real de Firebase
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+          this.errorMessage = 'Email o contraseña incorrectos.';
+        } else if (err.code === 'permission-denied') {
+          this.errorMessage = 'Error de permisos en la base de datos (Firestore). Revisa las reglas.';
+        } else {
+          // Si es otro error raro, te lo mostrará en pantalla tal cual
+          this.errorMessage = `Error interno: ${err.message || err.code}`;
+        }
+        console.error('Detalle del error de Firebase:', err);
       }
     });
   }

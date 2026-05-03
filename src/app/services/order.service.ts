@@ -1,36 +1,24 @@
-import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-
-export interface CreateOrderRequest {
-  delivery_type: 'ADDRESS' | 'PICKUP';
-  delivery_address: string;
-}
-
-export interface PaymentRequest {
-  card_holder: string;
-  card_number: string;
-  expiry: string;
-  cvv: string;
-}
+import { Injectable, inject } from '@angular/core';
+import { Firestore, collection, addDoc, getDocs, query, where } from '@angular/fire/firestore';
+import { AuthService } from './auth.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class OrderService {
-  private apiUrl = 'http://localhost:8000/orders';
+  private firestore = inject(Firestore);
+  private authService = inject(AuthService);
 
-  constructor(private http: HttpClient) {}
+  async createOrder(data: any): Promise<string> {
+    const user = this.authService.currentUser;
+    if (!user) throw new Error('No authenticado');
 
-  createOrder(data: CreateOrderRequest): Observable<any> {
-    return this.http.post(`${this.apiUrl}/checkout/`, data);
-  }
-
-  payOrder(orderId: number, data: PaymentRequest): Observable<any> {
-    return this.http.post(`${this.apiUrl}/${orderId}/pay/`, data);
-  }
-
-  getMyOrders(): Observable<any[]> {
-    return this.http.get<any[]>(`${this.apiUrl}/`);
+    const docRef = await addDoc(collection(this.firestore, 'orders'), {
+      ...data,
+      userId: user.id,
+      createdAt: new Date().toISOString(),
+      status: 'PENDIENTE'
+    });
+    return docRef.id;
   }
 }
