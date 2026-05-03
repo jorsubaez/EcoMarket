@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../services/auth.service';
-import { finalize } from 'rxjs/operators';
 
 @Component({
   selector: 'app-login',
@@ -32,8 +31,6 @@ export class LoginComponent {
 
   onSubmit() {
     this.submitted = true;
-
-    // Eliminamos los espacios en blanco accidentales al principio y al final del email
     this.email = this.email.trim();
 
     if (!this.email || !this.password) {
@@ -44,30 +41,31 @@ export class LoginComponent {
     this.submitting = true;
     this.errorMessage = '';
 
-    this.authService.login({ email: this.email, password: this.password }).pipe(
-      finalize(() => {
-        this.submitting = false;
-        this.cdr.detectChanges();
-      })
-    ).subscribe({
-      next: (profile) => {
-        if (profile.rol?.toUpperCase() === 'PRODUCTOR') {
-          this.router.navigate(['/panel-productor']);
-        } else {
-          this.router.navigate(['/perfil']);
-        }
+    // 1. Iniciamos sesión en Firebase Auth
+    this.authService.login({ email: this.email, password: this.password }).subscribe({
+      next: () => {
+        // 2. Esperamos a que Firestore descargue el perfil automáticamente
+        const sub = this.authService.session$.subscribe(profile => {
+          if (profile) {
+            this.submitting = false;
+            sub.unsubscribe(); // Dejamos de escuchar para no repetir la redirección
+
+            if (profile.rol?.toUpperCase() === 'PRODUCTOR') {
+              this.router.navigate(['/panel-productor']);
+            } else {
+              this.router.navigate(['/perfil']);
+            }
+          }
+        });
       },
       error: (err) => {
-        // AHORA SÍ: Filtramos el error real de Firebase
+        this.submitting = false;
         if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
           this.errorMessage = 'Email o contraseña incorrectos.';
-        } else if (err.code === 'permission-denied') {
-          this.errorMessage = 'Error de permisos en la base de datos (Firestore). Revisa las reglas.';
         } else {
-          // Si es otro error raro, te lo mostrará en pantalla tal cual
-          this.errorMessage = `Error interno: ${err.message || err.code}`;
+          this.errorMessage = `Error: ${err.message || err.code}`;
         }
-        console.error('Detalle del error de Firebase:', err);
+        this.cdr.detectChanges();
       }
     });
   }

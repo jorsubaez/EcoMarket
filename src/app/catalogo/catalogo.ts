@@ -73,7 +73,6 @@ export class Catalogo implements OnInit {
           item.image_url || 'assets/images/placeholder.png',
         tieneEcoSello: item.verification_status === 'VERIFICADO',
         descripcion: item.description || '',
-        certificadoUrl: item.certificate_url,
       }));
       this.loading = false;
       this.cdr.detectChanges();

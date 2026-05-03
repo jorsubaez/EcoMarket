@@ -3,7 +3,7 @@ import { BehaviorSubject, Observable, from } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { Auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, authState } from '@angular/fire/auth';
-import { Firestore, doc, setDoc, getDoc, onSnapshot } from '@angular/fire/firestore';
+import { Firestore, doc, setDoc, onSnapshot } from '@angular/fire/firestore';
 
 export interface SessionData {
   id: string;
@@ -26,35 +26,42 @@ export class AuthService {
   private sessionSubject = new BehaviorSubject<SessionData | null>(this.getSessionFromStorage());
   public session$ = this.sessionSubject.asObservable();
 
-  constructor() {
-    // Usamos onSnapshot (nativo de Firebase) en lugar del conflictivo docData
-    authState(this.auth).subscribe(user => {
-      if (user) {
-        const docRef = doc(this.firestore, `users/${user.uid}`);
+  // Guardamos el listener para poder "matarlo" cuando cerramos sesión
+  private profileUnsubscribe: (() => void) | null = null;
 
-        onSnapshot(docRef, (snap) => {
+  constructor() {
+    authState(this.auth).subscribe(user => {
+      // 1. Si había un listener anterior, lo destruimos
+      if (this.profileUnsubscribe) {
+        this.profileUnsubscribe();
+        this.profileUnsubscribe = null;
+      }
+
+      if (user) {
+        // 2. Creamos el nuevo listener
+        const docRef = doc(this.firestore, `users/${user.uid}`);
+        this.profileUnsubscribe = onSnapshot(docRef, (snap) => {
           if (snap.exists()) {
             const profile = snap.data();
             const session: SessionData = { id: user.uid, ...profile } as SessionData;
             this.sessionSubject.next(session);
             localStorage.setItem('ecomarket_session', JSON.stringify(session));
           } else {
-            // Si el perfil no existe en Firestore (ej: lo borraste a mano)
-            this.sessionSubject.next(null);
-            localStorage.removeItem('ecomarket_session');
+            this.clearSession();
           }
         }, (error) => {
-          console.error('Error de permisos o conexión en Firestore:', error);
-          this.sessionSubject.next(null);
-          localStorage.removeItem('ecomarket_session');
+          console.error('Error de Firestore:', error);
+          this.clearSession();
         });
-
       } else {
-        // No hay usuario autenticado
-        this.sessionSubject.next(null);
-        localStorage.removeItem('ecomarket_session');
+        this.clearSession();
       }
     });
+  }
+
+  private clearSession() {
+    this.sessionSubject.next(null);
+    localStorage.removeItem('ecomarket_session');
   }
 
   private getSessionFromStorage(): SessionData | null {
@@ -88,17 +95,9 @@ export class AuthService {
     );
   }
 
-  login(credentials: any): Observable<SessionData> {
-    return from(signInWithEmailAndPassword(this.auth, credentials.email, credentials.password)).pipe(
-      switchMap(async (userCredential) => {
-        // Usamos getDoc nativo para evitar completamente el error de tipos
-        const uid = userCredential.user.uid;
-        const docRef = doc(this.firestore, `users/${uid}`);
-        const snap = await getDoc(docRef);
-
-        return { id: uid, ...(snap.data() || {}) } as SessionData;
-      })
-    );
+  // Ahora el login SOLO autentica. La redirección la hará el componente al escuchar el session$
+  login(credentials: any): Observable<any> {
+    return from(signInWithEmailAndPassword(this.auth, credentials.email, credentials.password));
   }
 
   logout(): void {

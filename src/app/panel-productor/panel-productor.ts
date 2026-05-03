@@ -15,15 +15,29 @@ import { AuthService } from '../services/auth.service';
 import { ApiProduct, ProductService } from '../services/product.service';
 import { PROVINCIAS_ESPANA } from '../shared/provincias';
 
+interface Product {
+  id?: string;
+  ownerId: string;
+  ownerName?: string;
+  name: string;
+  origin: string;
+  price: number;
+  unit: string;
+  description: string;
+  quantity: number;
+  image?: string;
+  verification_status?: string;
+}
+
 @Component({
   selector: 'app-panel-productor',
+  standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   templateUrl: './panel-productor.html',
   styleUrl: './panel-productor.css',
 })
 export class PanelProductor implements OnInit, OnDestroy {
   @ViewChild('imageInput') imageInput?: ElementRef<HTMLInputElement>;
-  @ViewChild('certInput') certInput?: ElementRef<HTMLInputElement>;
 
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
@@ -54,7 +68,6 @@ export class PanelProductor implements OnInit, OnDestroy {
   protected errorMessage = '';
 
   protected selectedFileName = 'Ningún archivo seleccionado';
-  protected selectedCertName = 'Ningún archivo seleccionado';
 
   protected editingProductId: string | null = null;
   protected products: Product[] = [];
@@ -68,16 +81,13 @@ export class PanelProductor implements OnInit, OnDestroy {
     quantity: [0, [Validators.required, Validators.min(0)]],
   });
 
-  /** Compressed File ready to upload, or null if none selected. */
   private selectedImageFile: File | null = null;
-  /** Raw cert File ready to upload, or null if none selected. */
-  private selectedCertFile: File | null = null;
   private ownerId: string | null = null;
 
   async ngOnInit(): Promise<void> {
     const session = this.authService.currentUser;
 
-    if (!session || session.rol !== 'PRODUCTOR') {
+    if (!session || session.rol?.toUpperCase() !== 'PRODUCTOR') {
       this.accessDenied = true;
       this.loading = false;
       return;
@@ -100,8 +110,7 @@ export class PanelProductor implements OnInit, OnDestroy {
           description: p.description,
           quantity: p.quantity,
           image: p.image_url || '',
-          certificate_url: p.certificate_url,
-          verification_status: p.verification_status || 'PENDIENTE',
+          verification_status: p.verification_status || 'VERIFICADO',
         }));
 
       this.loading = false;
@@ -119,11 +128,7 @@ export class PanelProductor implements OnInit, OnDestroy {
 
   protected get filteredProducts(): Product[] {
     const query = this.searchTerm.trim().toLowerCase();
-
-    if (!query) {
-      return this.products;
-    }
-
+    if (!query) return this.products;
     return this.products.filter((product) => product.name.toLowerCase().includes(query));
   }
 
@@ -143,13 +148,7 @@ export class PanelProductor implements OnInit, OnDestroy {
       return;
     }
 
-    if (!this.isEditing && !this.selectedCertFile) {
-      this.errorMessage = 'Debes subir un certificado ecológico en PDF para publicar el producto.';
-      return;
-    }
-
     this.submitting = true;
-
     const formValue = this.productForm.getRawValue();
 
     const payload: Partial<ApiProduct> = {
@@ -163,32 +162,22 @@ export class PanelProductor implements OnInit, OnDestroy {
       quantity: Number(formValue.quantity),
     };
 
-    // Only attach image / certificate if the user selected a new file.
     if (this.selectedImageFile) {
       payload.image = this.selectedImageFile;
-    }
-
-    if (this.selectedCertFile) {
-      payload.certificate = this.selectedCertFile;
     }
 
     try {
       if (this.editingProductId !== null) {
         await this.productService.updateProduct(this.editingProductId, payload);
-        this.successMessage =
-          'Producto actualizado correctamente. Queda pendiente de nueva verificación.';
+        this.successMessage = 'Producto actualizado correctamente.';
       } else {
         await this.productService.createProduct(payload);
-        this.successMessage =
-          'Producto añadido correctamente. Queda pendiente de verificación por el administrador.';
+        this.successMessage = 'Producto añadido correctamente.';
       }
-
       this.resetForm();
     } catch (error: any) {
       console.error('Submit Error:', error);
-      this.errorMessage =
-        'No se pudo guardar el producto. Detalle: ' +
-        (error.error?.detail || JSON.stringify(error.error) || error.message);
+      this.errorMessage = 'No se pudo guardar el producto. Comprueba tu conexión.';
     } finally {
       this.submitting = false;
       this.cdr.detectChanges();
@@ -197,14 +186,9 @@ export class PanelProductor implements OnInit, OnDestroy {
 
   protected editProduct(product: Product): void {
     this.clearMessages();
-
     this.editingProductId = product.id ?? null;
     this.selectedImageFile = null;
     this.selectedFileName = product.image ? 'Imagen actual' : 'Ningún archivo seleccionado';
-    this.selectedCertFile = null;
-    this.selectedCertName = product.certificate_url
-      ? 'Certificado actual'
-      : 'Ningún archivo seleccionado';
 
     this.productForm.setValue({
       name: product.name ?? '',
@@ -219,30 +203,14 @@ export class PanelProductor implements OnInit, OnDestroy {
   }
 
   protected async deleteProduct(product: Product): Promise<void> {
-    console.log('Pulsado eliminar producto:', product);
-
-    const confirmed = window.confirm(
-      `Vas a eliminar "${product.name}" de tu lista de productos.\n\n¿Seguro que deseas continuar?`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
+    const confirmed = window.confirm(`Vas a eliminar "${product.name}".\n\n¿Seguro que deseas continuar?`);
+    if (!confirmed) return;
 
     this.clearMessages();
-
     try {
-      if (product.id === undefined || product.id === null) {
-        this.errorMessage = 'No se pudo eliminar el producto porque no tiene identificador.';
-        return;
-      }
-
+      if (!product.id) return;
       await this.productService.deleteProduct(product.id);
-
-      if (String(this.editingProductId) === String(product.id)) {
-        this.resetForm();
-      }
-
+      if (this.editingProductId === product.id) this.resetForm();
       this.successMessage = 'Producto eliminado correctamente.';
       this.cdr.detectChanges();
     } catch (error) {
@@ -257,11 +225,6 @@ export class PanelProductor implements OnInit, OnDestroy {
     this.clearMessages();
   }
 
-  /**
-   * Handles the image <input> change event.
-   * Validates the format, then uses ImageCompressionService to compress
-   * the file (≤1MB, ≤1280px, EXIF preserved) before storing it.
-   */
   protected async onImageSelected(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement | null;
     const file = input?.files?.[0];
@@ -273,59 +236,16 @@ export class PanelProductor implements OnInit, OnDestroy {
     }
 
     if (!file.type.match(/image\/(jpeg|jpg|png|webp)/)) {
-      this.errorMessage =
-        'Formato de imagen inválido. Por favor sube una foto en formato JPG, PNG o WebP.';
+      this.errorMessage = 'Formato de imagen inválido. Por favor sube una foto en formato JPG, PNG o WebP.';
       this.selectedFileName = 'Ningún archivo seleccionado';
       this.selectedImageFile = null;
-
-      if (this.imageInput) {
-        this.imageInput.nativeElement.value = '';
-      }
-
+      if (this.imageInput) this.imageInput.nativeElement.value = '';
       return;
     }
 
     this.errorMessage = '';
-    this.compressing = true;
-    this.selectedFileName = 'Comprimiendo imagen…';
-    this.cdr.detectChanges();
-
     this.selectedImageFile = file;
     this.selectedFileName = file.name;
-
-  }
-
-  protected async onCertSelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement | null;
-    const file = input?.files?.[0];
-
-    if (!file) {
-      this.selectedCertName =
-        this.isEditing &&
-        this.products.find((p) => String(p.id) === String(this.editingProductId))?.certificate_url
-          ? 'Certificado actual'
-          : 'Ningún archivo seleccionado';
-
-      this.selectedCertFile = null;
-      return;
-    }
-
-    if (file.type !== 'application/pdf') {
-      this.errorMessage =
-        'Formato de certificado inválido. Por favor sube un documento en formato PDF.';
-      this.selectedCertName = 'Ningún archivo seleccionado';
-      this.selectedCertFile = null;
-
-      if (this.certInput) {
-        this.certInput.nativeElement.value = '';
-      }
-
-      return;
-    }
-
-    this.errorMessage = '';
-    this.selectedCertFile = file;
-    this.selectedCertName = file.name;
   }
 
   protected logout(): void {
@@ -337,12 +257,7 @@ export class PanelProductor implements OnInit, OnDestroy {
 
   protected formatPrice(value: number | string): string {
     const numericValue = Number(value);
-
-    if (Number.isNaN(numericValue)) {
-      return `${value}`;
-    }
-
-    return numericValue.toFixed(2).replace('.', ',');
+    return Number.isNaN(numericValue) ? `${value}` : numericValue.toFixed(2).replace('.', ',');
   }
 
   protected formatUnit(unit: string): string {
@@ -354,70 +269,25 @@ export class PanelProductor implements OnInit, OnDestroy {
   }
 
   protected getStatusLabel(status?: string): string {
-    switch (status) {
-      case 'VERIFICADO':
-        return 'Verificado';
-      case 'RECHAZADO':
-        return 'Rechazado';
-      default:
-        return 'Pendiente';
-    }
+    return status === 'VERIFICADO' ? 'Verificado' : 'Pendiente';
   }
 
   protected getStatusClass(status?: string): string {
-    switch (status) {
-      case 'VERIFICADO':
-        return 'status-badge verified';
-      case 'RECHAZADO':
-        return 'status-badge rejected';
-      default:
-        return 'status-badge pending';
-    }
+    return status === 'VERIFICADO' ? 'status-badge verified' : 'status-badge pending';
   }
 
   private resetForm(): void {
     this.productForm.reset({
-      name: '',
-      origin: '',
-      price: 0,
-      unit: 'EUR/kg',
-      description: '',
-      quantity: 0,
+      name: '', origin: '', price: 0, unit: 'EUR/kg', description: '', quantity: 0,
     });
-
     this.editingProductId = null;
     this.selectedImageFile = null;
     this.selectedFileName = 'Ningún archivo seleccionado';
-    this.selectedCertFile = null;
-    this.selectedCertName = 'Ningún archivo seleccionado';
-
-    if (this.imageInput) {
-      this.imageInput.nativeElement.value = '';
-    }
-
-    if (this.certInput) {
-      this.certInput.nativeElement.value = '';
-    }
+    if (this.imageInput) this.imageInput.nativeElement.value = '';
   }
 
   private clearMessages(): void {
     this.successMessage = '';
     this.errorMessage = '';
   }
-}
-
-interface Product {
-  id?: string;
-  ownerId: string;
-  ownerName?: string;
-  name: string;
-  origin: string;
-  price: number;
-  unit: string;
-  description: string;
-  quantity: number;
-  image?: string;
-  certificate?: string;
-  certificate_url?: string;
-  verification_status?: string;
 }

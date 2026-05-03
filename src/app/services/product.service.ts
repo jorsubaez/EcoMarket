@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { Firestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where } from '@angular/fire/firestore';
+import { Firestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from '@angular/fire/firestore';
 import { Storage, ref, uploadBytes, getDownloadURL } from '@angular/fire/storage';
 
 export interface ApiProduct {
@@ -13,8 +13,6 @@ export interface ApiProduct {
   quantity: number;
   image?: File | null;
   image_url?: string;
-  certificate?: File | null;
-  certificate_url?: string;
   verification_status?: string;
   ownerId: string;
   ownerName?: string;
@@ -40,23 +38,15 @@ export class ProductService {
   async createProduct(payload: Partial<ApiProduct>): Promise<void> {
     const productData = { ...payload };
     delete productData.image;
-    delete productData.certificate;
 
-    // Subir imagen
+    // Subir imagen a Firebase Storage
     if (payload.image) {
       const imgRef = ref(this.storage, `products/img_${Date.now()}_${payload.image.name}`);
       await uploadBytes(imgRef, payload.image);
       productData.image_url = await getDownloadURL(imgRef);
     }
 
-    // Subir certificado
-    if (payload.certificate) {
-      const certRef = ref(this.storage, `certificates/cert_${Date.now()}_${payload.certificate.name}`);
-      await uploadBytes(certRef, payload.certificate);
-      productData.certificate_url = await getDownloadURL(certRef);
-    }
-
-    productData.verification_status = 'PENDIENTE';
+    productData.verification_status = 'VERIFICADO'; // Automático
     await addDoc(collection(this.firestore, 'products'), productData);
     await this.refreshProducts();
   }
@@ -64,19 +54,12 @@ export class ProductService {
   async updateProduct(id: string, payload: Partial<ApiProduct>): Promise<void> {
     const productData = { ...payload };
     delete productData.image;
-    delete productData.certificate;
     delete productData.id;
 
     if (payload.image) {
       const imgRef = ref(this.storage, `products/img_${Date.now()}_${payload.image.name}`);
       await uploadBytes(imgRef, payload.image);
       productData.image_url = await getDownloadURL(imgRef);
-    }
-
-    if (payload.certificate) {
-      const certRef = ref(this.storage, `certificates/cert_${Date.now()}_${payload.certificate.name}`);
-      await uploadBytes(certRef, payload.certificate);
-      productData.certificate_url = await getDownloadURL(certRef);
     }
 
     const docRef = doc(this.firestore, `products/${id}`);

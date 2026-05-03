@@ -22,11 +22,7 @@
         <div>
           <h2>{{ isEditing ? 'Editar producto' : 'Añadir producto' }}</h2>
           <p>
-            {{
-              isEditing
-                ? 'Actualiza los datos del producto seleccionado. Si lo modificas, volverá a quedar pendiente de verificación.'
-                : 'Completa el formulario para publicar un nuevo producto. El administrador deberá verificar el certificado ecológico.'
-            }}
+            Añade o edita los productos de tu catálogo para que estén disponibles en la tienda.
           </p>
         </div>
 
@@ -122,26 +118,7 @@
             <strong>{{ selectedFileName }}</strong>
           </label>
           <small>
-            Opcional. Formatos admitidos: JPG, PNG o WebP. La imagen se comprimirá automáticamente antes de subirse.
-          </small>
-        </div>
-
-
-        <div class="field">
-          <span>Certificado ecológico</span>
-          <label class="file-picker" for="product-cert">
-            <input
-              #certInput
-              id="product-cert"
-              type="file"
-              accept=".pdf, application/pdf"
-              (change)="onCertSelected($event)"
-            />
-            <span class="btn btn-secondary">Seleccionar certificado</span>
-            <strong>{{ selectedCertName }}</strong>
-          </label>
-          <small>
-            Obligatorio para publicar productos. El producto quedará pendiente hasta que el administrador verifique el certificado.
+            Opcional. Formatos admitidos: JPG, PNG o WebP.
           </small>
         </div>
 
