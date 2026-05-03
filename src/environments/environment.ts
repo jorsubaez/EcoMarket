@@ -1,7 +1,7 @@
 export const environment = {
   production: false,
   firebase: {
-    apiKey: "AIzaSyAqaIQ8SZ1fbpMtsrW94Qg9LPYh4I9P6uM",
+    apiKey: "",
     authDomain: "ecomarket-b4d55.firebaseapp.com",
     projectId: "ecomarket-b4d55",
     storageBucket: "ecomarket-b4d55.firebasestorage.app",
