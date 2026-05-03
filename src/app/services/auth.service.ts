@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
-import { BehaviorSubject, Observable, from, of } from 'rxjs';
-import { map, switchMap, take } from 'rxjs/operators';
+import { BehaviorSubject, Observable, from } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { Auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, authState } from '@angular/fire/auth';
-import { Firestore, doc, setDoc, docData } from '@angular/fire/firestore';
+import { Firestore, doc, setDoc, getDoc, onSnapshot } from '@angular/fire/firestore';
 
 export interface SessionData {
   id: string;
@@ -27,30 +27,30 @@ export class AuthService {
   public session$ = this.sessionSubject.asObservable();
 
   constructor() {
-    // Escucha maestra: si el usuario cambia en Firebase Auth, sincronizamos con Firestore
+    // Usamos onSnapshot (nativo de Firebase) en lugar del conflictivo docData
     authState(this.auth).subscribe(user => {
       if (user) {
-        docData(doc(this.firestore, `users/${user.uid}`)).subscribe({
-          next: (profile: any) => {
-            if (profile) {
-              // El usuario existe y tiene perfil
-              const session: SessionData = { id: user.uid, ...profile };
-              this.sessionSubject.next(session);
-              localStorage.setItem('ecomarket_session', JSON.stringify(session));
-            } else {
-              // FANTASMA: Existe en Auth pero le borraste el documento en Firestore
-              this.sessionSubject.next(null);
-              localStorage.removeItem('ecomarket_session');
-            }
-          },
-          error: () => {
-            // ERROR: El token fue revocado o la cuenta fue eliminada desde la consola
+        const docRef = doc(this.firestore, `users/${user.uid}`);
+
+        onSnapshot(docRef, (snap) => {
+          if (snap.exists()) {
+            const profile = snap.data();
+            const session: SessionData = { id: user.uid, ...profile } as SessionData;
+            this.sessionSubject.next(session);
+            localStorage.setItem('ecomarket_session', JSON.stringify(session));
+          } else {
+            // Si el perfil no existe en Firestore (ej: lo borraste a mano)
             this.sessionSubject.next(null);
             localStorage.removeItem('ecomarket_session');
           }
+        }, (error) => {
+          console.error('Error de permisos o conexión en Firestore:', error);
+          this.sessionSubject.next(null);
+          localStorage.removeItem('ecomarket_session');
         });
+
       } else {
-        // No hay usuario logueado
+        // No hay usuario autenticado
         this.sessionSubject.next(null);
         localStorage.removeItem('ecomarket_session');
       }
@@ -82,7 +82,6 @@ export class AuthService {
           rol: userData.rol || 'CLIENTE',
           provincia: userData.provincia
         };
-        // Al guardar esto, el listener del constructor saltará automáticamente y actualizará
         await setDoc(doc(this.firestore, `users/${uid}`), profileData);
         return { uid, ...profileData };
       })
@@ -91,12 +90,13 @@ export class AuthService {
 
   login(credentials: any): Observable<SessionData> {
     return from(signInWithEmailAndPassword(this.auth, credentials.email, credentials.password)).pipe(
-      switchMap(userCredential => {
-        // Esperamos a traer el perfil de Firestore antes de completar el login
-        return docData(doc(this.firestore, `users/${userCredential.user.uid}`)).pipe(
-          take(1), // take(1) es vital para que la suscripción en el componente termine
-          map((profile: any) => ({ id: userCredential.user.uid, ...profile } as SessionData))
-        );
+      switchMap(async (userCredential) => {
+        // Usamos getDoc nativo para evitar completamente el error de tipos
+        const uid = userCredential.user.uid;
+        const docRef = doc(this.firestore, `users/${uid}`);
+        const snap = await getDoc(docRef);
+
+        return { id: uid, ...(snap.data() || {}) } as SessionData;
       })
     );
   }
